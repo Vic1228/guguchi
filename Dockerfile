@@ -16,7 +16,9 @@ RUN mkdir -p /app/data
 ENV DB_PATH=/app/data/stocks.db
 ENV PYTHONUNBUFFERED=1
 
-EXPOSE 5000
+# 預設 PORT 為 5000，如果 Zeabur 給了 PORT 就用它給的
+ENV PORT=5000
+EXPOSE ${PORT}
 
 # 使用 gunicorn 啟動
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:app"]
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app
