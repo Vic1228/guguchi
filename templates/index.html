@@ -78,6 +78,16 @@
         </div>
         <div class="modal-body">
             <input type="hidden" id="editBatchId">
+            
+            <div class="form-group" id="importSection">
+                <label>📋 貼上對帳單快速匯入 (可選)</label>
+                <textarea id="importText" rows="3" placeholder="請直接貼上對帳單內容，系統會自動找出「代碼」、「股價」與「股數」。例如：
+2330 台積電 1005.00 10股
+2317 鴻海買進 200.5 50" style="width: 100%; border:1px solid var(--border); border-radius:4px; padding:8px; background:var(--bg-secondary); color:var(--text); resize:vertical; margin-bottom: 4px; font-size: 0.9em;"></textarea>
+                <button class="btn btn-secondary btn-sm mt-1" onclick="parseImportText()" style="width:100%; justify-content:center;">向下分析與自動帶入 ↓</button>
+            </div>
+            <hr style="border: 0; border-top: 1px solid var(--border); margin: 16px 0;">
+
             <div class="form-row">
                 <div class="form-group">
                     <label>批次名稱</label>

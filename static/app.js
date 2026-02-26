@@ -315,6 +315,9 @@ function openNewBatchModal() {
     document.getElementById("batchName").value = "";
     document.getElementById("batchDate").value = new Date().toISOString().split("T")[0];
 
+    const importText = document.getElementById("importText");
+    if (importText) importText.value = "";
+
     const container = document.getElementById("stockInputs");
     container.innerHTML = "";
     stockRowCount = 0;
@@ -331,6 +334,9 @@ async function openEditBatchModal(batchId) {
     document.getElementById("editBatchId").value = batchId;
     document.getElementById("batchName").value = batch.name;
     document.getElementById("batchDate").value = batch.start_date;
+
+    const importText = document.getElementById("importText");
+    if (importText) importText.value = "";
 
     const container = document.getElementById("stockInputs");
     container.innerHTML = "";
@@ -367,6 +373,84 @@ function addStockRow(code = "", name = "", price = "", shares = "", recordId = "
         <button class="remove-stock-btn" onclick="this.parentElement.remove()" title="移除">✕</button>
     `;
     container.appendChild(row);
+}
+
+function parseImportText() {
+    const text = document.getElementById("importText").value.trim();
+    if (!text) {
+        showToast("請先貼上對帳單文字！", "error");
+        return;
+    }
+
+    const lines = text.split('\n');
+    let addedCount = 0;
+
+    // 清除畫面上完全空白、未填寫的列
+    const rows = document.querySelectorAll("#stockInputs .stock-input-row");
+    rows.forEach(row => {
+        const c = row.querySelector(".stock-code-input").value.trim();
+        const p = row.querySelector(".stock-price-input").value;
+        const s = row.querySelector(".stock-shares-input").value;
+        if (!c && !p && !s) {
+            row.remove();
+        }
+    });
+
+    for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+        
+        // 將千分位逗號移除，避免干擾價格與數量的判斷
+        const cleanLine = line.replace(/,/g, '');
+        
+        // 抓取第一組像股票代碼的文字（4碼數字開頭，可帶有英文，例如 2330, 0050, 2881A）
+        const codeMatch = cleanLine.match(/\b([0-9]{4}[A-Za-z]?)\b/);
+        if (!codeMatch) continue; // 這行沒有代碼就跳過
+        
+        const code = codeMatch[1];
+        
+        // 抓取這行所有的數字(包含有小數點的)
+        const numbers = cleanLine.match(/\b\d+(?:\.\d+)?\b/g) || [];
+        const otherNumbers = numbers.filter(n => n !== code);
+        
+        let price = "";
+        let shares = "";
+        
+        if (otherNumbers.length > 0) {
+            // 如果只有一個額外數字，就預設給買入價
+            if (otherNumbers.length === 1) {
+                price = otherNumbers[0];
+            } else {
+                // 如果有兩個以上的數字：
+                // 1. 找帶小數點的當作價格
+                const floatNum = otherNumbers.find(n => n.includes('.'));
+                if (floatNum) {
+                    price = floatNum;
+                    shares = otherNumbers.find(n => n !== floatNum && !n.includes('.')) || "";
+                } else {
+                    // 2. 如果都沒有小數點，預設第一個是價格，第二個是數量（若有例外讓使用者微調）
+                    price = otherNumbers[0];
+                    shares = otherNumbers[1];
+                }
+            }
+        }
+        
+        addStockRow(code, "", price, shares, "");
+        addedCount++;
+    }
+
+    if (addedCount > 0) {
+        showToast(`成功匯入 ${addedCount} 筆股票設定，請核對數量與價格唷！`);
+        document.getElementById("importText").value = "";
+        
+        // 自動觸發表單的中文名稱查詢
+        const inputs = document.querySelectorAll('#stockInputs .stock-code-input');
+        inputs.forEach(input => {
+            if (input.value) lookupStockName(input);
+        });
+    } else {
+        showToast("無法解析對帳單，請確認有包含股票代碼與數字格式", "error");
+    }
 }
 
 async function lookupStockName(input) {
