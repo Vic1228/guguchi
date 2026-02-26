@@ -16,5 +16,11 @@ RUN mkdir -p /app/data
 ENV DB_PATH=/app/data/stocks.db
 ENV PYTHONUNBUFFERED=1
 
+EXPOSE 5000
+
+# 添加健康檢查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health').read()" || exit 1
+
 # 使用 gunicorn 啟動 (Zeabur 建議監聽 5000 並輸出存取與錯誤日誌)
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
