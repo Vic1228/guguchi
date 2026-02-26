@@ -1,6 +1,7 @@
 """
 股票追蹤 Web 應用 - Flask 主程式
 """
+import logging
 from flask import Flask, render_template, request, jsonify
 from models import (
     init_db, get_config, update_config,
@@ -12,10 +13,17 @@ from models import (
 from stock_service import get_stock_name, get_stock_price, get_stock_info
 from datetime import datetime
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
 
 # 啟動時初始化資料庫
-init_db()
+try:
+    init_db()
+    logger.info("資料庫初始化完成")
+except Exception as e:
+    logger.error(f"資料庫初始化失敗: {e}")
 
 # 台股手續費標準費率
 STANDARD_FEE_RATE = 0.001425  # 0.1425%

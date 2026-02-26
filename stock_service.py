@@ -1,17 +1,24 @@
 """
 股價服務 - 抓取台股即時股價與中文名稱
 """
-import os
-import sys
+import logging
 import yfinance as yf
 import twstock
+
+# 抑制 yfinance 的警告訊息
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+
+logger = logging.getLogger(__name__)
 
 
 def get_stock_name(stock_code):
     """利用 twstock 取得中文股票名稱"""
-    stock_info = twstock.codes.get(str(stock_code))
-    if stock_info:
-        return stock_info.name
+    try:
+        stock_info = twstock.codes.get(str(stock_code))
+        if stock_info:
+            return stock_info.name
+    except Exception:
+        pass
     return "未知"
 
 
@@ -21,9 +28,6 @@ def get_stock_price(stock_code):
     先嘗試上市 (.TW)，再嘗試上櫃 (.TWO)
     回傳: (price, success)
     """
-    stderr_backup = sys.stderr
-    sys.stderr = open(os.devnull, 'w')
-
     try:
         # 先嘗試上市
         ticker = f"{stock_code}.TW"
@@ -40,11 +44,9 @@ def get_stock_price(stock_code):
             return 0.0, False
 
         return float(hist['Close'].iloc[-1]), True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"抓取 {stock_code} 股價失敗: {e}")
         return 0.0, False
-    finally:
-        sys.stderr.close()
-        sys.stderr = stderr_backup
 
 
 def get_stock_info(stock_code):
@@ -60,3 +62,4 @@ def get_stock_info(stock_code):
         "price": price,
         "success": success
     }
+
