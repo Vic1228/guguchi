@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票追蹤 — 每週定投管理</title>
+    <meta name="description" content="每週定期追蹤台股投資，自動更新股價計算損益">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+        <h1>📈 股票追蹤</h1>
+        <p>每週定投管理 · 即時損益追蹤</p>
+    </header>
+
+    <!-- Stats Overview -->
+    <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+            <div class="stat-label">總投入成本</div>
+            <div class="stat-value" id="statTotalInvested">$0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">淨市值 (扣除費用)</div>
+            <div class="stat-value" id="statMarketValue">$0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">淨損益</div>
+            <div class="stat-value" id="statTotalPnl">$0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">報酬率</div>
+            <div class="stat-value" id="statPnlPct">0%</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">累計交易費用</div>
+            <div class="stat-value" id="statTotalFees" style="color: var(--warning);">$0</div>
+        </div>
+    </div>
+
+    <!-- Batch Section -->
+    <section class="section">
+        <div class="section-header">
+            <h2>📋 投資批次</h2>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-secondary btn-sm" onclick="openCalcModal()">
+                    🧮 試算
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="refreshAllPrices()">
+                    🔄 更新全部股價
+                </button>
+                <button class="btn btn-primary" onclick="openNewBatchModal()">
+                    ＋ 新增批次
+                </button>
+            </div>
+        </div>
+
+        <div class="batch-list" id="batchList">
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">📊</div>
+                <p>尚未建立任何投資批次</p>
+                <button class="btn btn-primary" onclick="openNewBatchModal()">建立第一個批次</button>
+            </div>
+        </div>
+    </section>
+</div>
+
+<!-- New/Edit Batch Modal -->
+<div class="modal-overlay" id="batchModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="batchModalTitle">新增投資批次</h3>
+            <button class="modal-close" onclick="closeBatchModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="editBatchId">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>批次名稱</label>
+                    <input type="text" id="batchName" placeholder="例如：第1週">
+                </div>
+                <div class="form-group">
+                    <label>買入日期</label>
+                    <input type="date" id="batchDate">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>股票清單</label>
+                <div id="stockInputs"></div>
+                <button class="btn btn-secondary btn-sm mt-2" onclick="addStockRow()">＋ 新增股票</button>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeBatchModal()">取消</button>
+            <button class="btn btn-primary" id="saveBatchBtn" onclick="saveBatch()">儲存批次</button>
+        </div>
+    </div>
+</div>
+
+<!-- Calculator Modal -->
+<div class="modal-overlay" id="calcModal">
+    <div class="modal" style="max-width:700px;">
+        <div class="modal-header">
+            <h3>🧮 每週零股試算</h3>
+            <button class="modal-close" onclick="closeCalcModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>本週投資預算 (元)</label>
+                <input type="number" id="calcBudget" placeholder="例如：50000" step="1000">
+            </div>
+            <div class="form-group">
+                <label>股票代碼（以空白或逗號分隔，例如：2330 2317 2454）</label>
+                <input type="text" id="calcStocks" placeholder="2330 2317 2454 2308 2881">
+            </div>
+            <button class="btn btn-primary" id="calcBtn" onclick="runCalculation()">開始試算</button>
+            <div id="calcResult" style="margin-top:20px;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeCalcModal()">關閉</button>
+            <button class="btn btn-primary" id="calcToRecordBtn" onclick="calcToRecord()" style="display:none;">📝 直接建立批次</button>
+        </div>
+    </div>
+</div>
+
+<!-- Sell Stock Modal -->
+<div class="modal-overlay" id="sellModal">
+    <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+            <h3 id="sellModalTitle">賣出股票</h3>
+            <button class="modal-close" onclick="closeSellModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="sellRecordId">
+            <input type="hidden" id="sellBatchId">
+            <div class="form-group">
+                <label>實際賣出價格</label>
+                <input type="number" id="sellPrice" placeholder="輸入賣出價格" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>賣出日期</label>
+                <input type="date" id="sellDate">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeSellModal()">取消</button>
+            <button class="btn btn-primary" onclick="confirmSellStock()">確認賣出</button>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm Dialog Modal -->
+<div class="modal-overlay" id="confirmModal">
+    <div class="modal" style="max-width:380px;">
+        <div class="modal-header">
+            <h3>確認操作</h3>
+            <button class="modal-close" onclick="closeConfirmModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="confirmMessage" style="line-height:1.8;">確定要執行此操作嗎？</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeConfirmModal()">取消</button>
+            <button class="btn btn-danger" id="confirmOkBtn" onclick="executeConfirmAction()">確定</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
