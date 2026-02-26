@@ -97,6 +97,7 @@ def get_effective_sell_price(stock):
 @app.route("/")
 def index():
     """首頁"""
+    logger.info("GET / 路由被調用，準備渲染 index.html")
     return render_template("index.html")
 
 
