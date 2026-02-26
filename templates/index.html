@@ -164,6 +164,33 @@
     </div>
 </div>
 
+<!-- Move Stock Modal -->
+<div class="modal-overlay" id="moveModal">
+    <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+            <h3 id="moveModalTitle">移轉股票至新批次</h3>
+            <button class="modal-close" onclick="closeMoveModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="moveRecordId">
+            <input type="hidden" id="moveOldBatchId">
+            <p style="margin-bottom: 15px; color: var(--text-muted); font-size: 0.9em;">
+                將未賣出的標的展延（搬移）到另一個運作中的批次繼續追蹤。
+            </p>
+            <div class="form-group">
+                <label>選擇目標批次</label>
+                <select id="moveTargetBatch" style="width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 8px; background: var(--bg-secondary); color: var(--text);">
+                    <option value="">載入中...</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeMoveModal()">取消</button>
+            <button class="btn btn-primary" onclick="confirmMoveStock()">確認移轉</button>
+        </div>
+    </div>
+</div>
+
 <!-- Confirm Dialog Modal -->
 <div class="modal-overlay" id="confirmModal">
     <div class="modal" style="max-width:380px;">

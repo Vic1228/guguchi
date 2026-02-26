@@ -85,15 +85,44 @@ function renderBatchList(batches) {
     container.innerHTML = batches.map(b => {
         const pnlCls = pnlClass(b.pnl);
         const pnlText = `${pnlSign(b.pnl)}$${fmt(Math.abs(b.pnl))} (${pnlSign(b.pnl_pct)}${fmtDecimal(b.pnl_pct)}%)`;
+        
+        let headerBadge = '';
+        let reportHtml = '';
+        let cardStyle = '';
+
+        if (b.is_closed && b.stock_count > 0) {
+            headerBadge = `<span style="font-size: 0.75rem; background: var(--success); color: white; padding: 2px 6px; border-radius: 4px; margin-left: 8px;">✅ 已結算</span>`;
+            cardStyle = 'border-left: 4px solid var(--success);';
+            
+            const winRate = b.stock_count > 0 ? Math.round((b.win_count / b.stock_count) * 100) : 0;
+            const bestText = b.best_stock ? `${b.best_stock.stock_code} ${b.best_stock.stock_name} (${pnlSign(b.best_stock.pnl_pct)}${fmtDecimal(b.best_stock.pnl_pct)}%)` : '無';
+            const worstText = b.worst_stock ? `${b.worst_stock.stock_code} ${b.worst_stock.stock_name} (${pnlSign(b.worst_stock.pnl_pct)}${fmtDecimal(b.worst_stock.pnl_pct)}%)` : '無';
+
+            reportHtml = `
+            <div style="background: var(--bg-hover); padding: 12px 15px; border-top: 1px solid var(--border); font-size: 0.9em; display: flex; flex-direction: column; gap: 6px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <strong>🏆 結算戰報</strong>
+                    <span class="${pnlCls}" style="font-weight: bold;">淨損益：${pnlText}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 4px;">
+                    <span>🎯 勝率：${b.win_count} 勝 ${b.loss_count} 敗 (${winRate}%)</span>
+                    <span>🚀 最強標的：<span class="text-success">${bestText}</span></span>
+                    <span>📉 拖油瓶：<span class="text-danger">${worstText}</span></span>
+                </div>
+            </div>`;
+        }
+
         return `
-        <div class="batch-card" id="batch-${b.id}">
+        <div class="batch-card" id="batch-${b.id}" style="${cardStyle}">
             <div class="batch-card-header" onclick="toggleBatch(${b.id})">
                 <div class="batch-info">
-                    <span class="batch-name">${escHtml(b.name)}</span>
+                    <span class="batch-name">${escHtml(b.name)}${headerBadge}</span>
                     <span class="batch-date">${b.start_date} · ${b.stock_count} 檔 · 投入 $${fmt(b.total_cost)}</span>
                 </div>
-                <span class="batch-pnl ${pnlCls}">${pnlText}</span>
+                <!-- 展開時箭頭動畫可在此實作 -->
+                ${!b.is_closed ? `<span class="batch-pnl ${pnlCls}">${pnlText}</span>` : ''}
             </div>
+            ${reportHtml}
             <div class="batch-card-body" id="batch-body-${b.id}">
                 <div style="text-align:center; padding:20px; color:var(--text-muted);">載入中...</div>
             </div>
@@ -160,7 +189,8 @@ async function loadBatchDetail(batchId) {
 
             const actionBtn = isSold
                 ? `<button class="btn btn-secondary btn-sm" onclick="unsellStock(${s.id}, ${batchId})" title="取消賣出" style="padding:4px 8px; font-size:0.75rem;">↩ 取消</button>`
-                : `<button class="btn btn-primary btn-sm" onclick="promptSellStock(${s.id}, '${escHtml(s.stock_code)}', '${escHtml(s.stock_name)}', ${batchId})" style="padding:4px 8px; font-size:0.75rem;">💰 賣出</button>`;
+                : `<button class="btn btn-primary btn-sm" onclick="promptSellStock(${s.id}, '${escHtml(s.stock_code)}', '${escHtml(s.stock_name)}', ${batchId})" style="padding:4px 8px; font-size:0.75rem;">💰 賣出</button>
+                   <button class="btn btn-secondary btn-sm" onclick="promptMoveStock(${s.id}, '${escHtml(s.stock_code)}', '${escHtml(s.stock_name)}', ${batchId})" style="padding:4px 8px; font-size:0.75rem; margin-top:4px;">🔄 展延</button>`;
 
             const rowStyle = isSold ? 'opacity:0.7;' : '';
 
@@ -265,6 +295,74 @@ async function unsellStock(recordId, batchId) {
         await loadBatchDetail(batchId);
         loadSummary();
     });
+}
+
+// ============ Move Stock (Modal) ============
+
+async function promptMoveStock(recordId, stockCode, stockName, currentBatchId) {
+    document.getElementById("moveModalTitle").textContent = `展延 ${stockCode} ${stockName}`;
+    document.getElementById("moveRecordId").value = recordId;
+    document.getElementById("moveOldBatchId").value = currentBatchId;
+    
+    const selectEl = document.getElementById("moveTargetBatch");
+    selectEl.innerHTML = '<option value="">載入中...</option>';
+    document.getElementById("moveModal").classList.add("active");
+
+    // 載入可選的批次 (排除當前批次)
+    const summaryData = await api("/api/summary");
+    const batches = summaryData.batches || [];
+    
+    // 依日期排序，由新到舊
+    batches.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+
+    if (batches.length <= 1) {
+        selectEl.innerHTML = '<option value="">(無其他批次可選)</option>';
+        return;
+    }
+
+    let optionsHtml = '<option value="">-- 請選擇目標批次 --</option>';
+    batches.forEach(b => {
+        if (b.id !== parseInt(currentBatchId)) {
+            optionsHtml += `<option value="${b.id}">${b.name} (${b.start_date})</option>`;
+        }
+    });
+    
+    // 如果只有一個其他選項，可以直接預設選它，通常是最新建的那一個
+    selectEl.innerHTML = optionsHtml;
+    if (selectEl.options.length === 2) {
+        selectEl.selectedIndex = 1;
+    }
+}
+
+function closeMoveModal() {
+    document.getElementById("moveModal").classList.remove("active");
+}
+
+async function confirmMoveStock() {
+    const recordId = document.getElementById("moveRecordId").value;
+    const oldBatchId = document.getElementById("moveOldBatchId").value;
+    const targetBatchId = document.getElementById("moveTargetBatch").value;
+
+    if (!targetBatchId) {
+        showToast("請選擇一個目標批次來展延股票！", "error");
+        return;
+    }
+
+    try {
+        await api(`/api/stocks/${recordId}/move`, {
+            method: "POST",
+            body: JSON.stringify({ new_batch_id: parseInt(targetBatchId) })
+        });
+        
+        closeMoveModal();
+        showToast("✅ 已成功將標的展延至新批次！");
+        
+        // 更新當前舊批次與整體統計表
+        await loadBatchDetail(parseInt(oldBatchId));
+        loadSummary();
+    } catch (e) {
+        showToast("展延時發生錯誤", "error");
+    }
 }
 
 // ============ Confirm Dialog (Modal) ============

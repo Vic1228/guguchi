@@ -8,7 +8,7 @@ from models import (
     create_batch, get_all_batches, get_batch, update_batch, delete_batch,
     add_stock_record, get_stocks_by_batch, update_stock_record,
     update_stock_current_price, delete_stock_record, get_all_stock_records,
-    sell_stock, unsell_stock
+    sell_stock, unsell_stock, move_stock_to_batch
 )
 from stock_service import get_stock_name, get_stock_price, get_stock_info
 from datetime import datetime
@@ -235,6 +235,18 @@ def api_unsell_stock(record_id):
     return jsonify({"success": True})
 
 
+@app.route("/api/stocks/<int:record_id>/move", methods=["POST"])
+def api_move_stock(record_id):
+    """將單一股票紀錄直接展延（搬移）到另一個批次"""
+    data = request.get_json()
+    new_batch_id = data.get("new_batch_id")
+    if not new_batch_id:
+        return jsonify({"error": "Missing new_batch_id"}), 400
+        
+    move_stock_to_batch(record_id, new_batch_id)
+    return jsonify({"success": True})
+
+
 # ============ 即時股價 API ============
 
 @app.route("/api/stock-info/<stock_code>", methods=["GET"])
@@ -356,16 +368,51 @@ def api_summary():
         batch_fees = 0
         batch_realized = 0
         batch_unrealized = 0
+        
+        is_closed = (len(stocks) > 0) and all(s.get("is_sold") for s in stocks)
+        win_count = 0
+        loss_count = 0
+        best_stock = None
+        worst_stock = None
+
         for s in stocks:
             price = get_effective_sell_price(s)
             fees = calc_fees(s["buy_price"], s["shares"], price, FEE_DISCOUNT)
             batch_cost += fees["total_cost"]
             batch_net += fees["net_value"]
             batch_fees += fees["total_fees"]
+            
+            pnl = fees["net_pnl"]
+            stock_cost = fees["total_cost"]
+            stock_pnl_pct = (pnl / stock_cost * 100) if stock_cost > 0 else 0
+            
+            # 計算勝敗
+            if pnl > 0:
+                win_count += 1
+            elif pnl < 0:
+                loss_count += 1
+                
+            # 計算最佳與最差
+            if best_stock is None or stock_pnl_pct > best_stock["pnl_pct"]:
+                best_stock = {
+                    "stock_code": s["stock_code"],
+                    "stock_name": s["stock_name"],
+                    "pnl": pnl,
+                    "pnl_pct": stock_pnl_pct
+                }
+                
+            if worst_stock is None or stock_pnl_pct < worst_stock["pnl_pct"]:
+                worst_stock = {
+                    "stock_code": s["stock_code"],
+                    "stock_name": s["stock_name"],
+                    "pnl": pnl,
+                    "pnl_pct": stock_pnl_pct
+                }
+            
             if s.get("is_sold"):
-                batch_realized += fees["net_pnl"]
+                batch_realized += pnl
             else:
-                batch_unrealized += fees["net_pnl"]
+                batch_unrealized += pnl
 
         batch_pnl = batch_net - batch_cost
         batch_pnl_pct = ((batch_net / batch_cost - 1) * 100) if batch_cost > 0 else 0
@@ -375,6 +422,11 @@ def api_summary():
         total_fees += batch_fees
         total_realized_pnl += batch_realized
         total_unrealized_pnl += batch_unrealized
+        
+        # 只在已結算或者至少有股票的狀態下回傳最佳/最差
+        if len(stocks) == 0:
+            best_stock = None
+            worst_stock = None
 
         batch_summaries.append({
             "id": batch["id"],
@@ -387,7 +439,12 @@ def api_summary():
             "pnl_pct": batch_pnl_pct,
             "realized_pnl": batch_realized,
             "unrealized_pnl": batch_unrealized,
-            "stock_count": len(stocks)
+            "stock_count": len(stocks),
+            "is_closed": is_closed,
+            "win_count": win_count,
+            "loss_count": loss_count,
+            "best_stock": best_stock,
+            "worst_stock": worst_stock
         })
 
     total_pnl = total_net_value - total_cost

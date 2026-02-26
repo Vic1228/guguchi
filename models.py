@@ -215,6 +215,17 @@ def unsell_stock(record_id):
     conn.close()
 
 
+def move_stock_to_batch(record_id, new_batch_id):
+    """將單一股票紀錄展延（搬移）到另一個批次"""
+    conn = get_db()
+    conn.execute(
+        "UPDATE stock_record SET batch_id = ? WHERE id = ?",
+        (new_batch_id, record_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_all_stock_records():
     """取得所有股票紀錄（含批次資訊），用於統計"""
     conn = get_db()
