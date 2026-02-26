@@ -19,16 +19,16 @@ def get_stock_name(stock_code):
         return stock_info.name
     return "未知"
 
+import logging
+# 抑制 yfinance 的警告訊息
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+
 def calculate_shares(stock_code, allocated_capital):
     """
     抓取最新股價並計算可以買進的零股數
     """
     stock_name = get_stock_name(stock_code)
     try:
-        # 將 stderr 導向 devnull 以隱藏 yfinance 找不到股票時的紅字警告
-        stderr_backup = sys.stderr
-        sys.stderr = open(os.devnull, 'w')
-        
         try:
             ticker = f"{stock_code}.TW"
             stock = yf.Ticker(ticker)
@@ -39,10 +39,8 @@ def calculate_shares(stock_code, allocated_capital):
                 ticker = f"{stock_code}.TWO"
                 stock = yf.Ticker(ticker)
                 hist = stock.history(period="1d")
-        finally:
-            # 確保結束後將 stderr 恢復
-            sys.stderr.close()
-            sys.stderr = stderr_backup
+        except Exception:
+            pass
 
         if hist.empty:
             print(f"警告：無法取得 {stock_code} 的股價資料。請確認代碼是否正確。")

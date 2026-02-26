@@ -13,10 +13,31 @@ from models import (
 from stock_service import get_stock_name, get_stock_price, get_stock_info
 from datetime import datetime
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+@app.before_request
+def log_request_info():
+    logger.info(f"Received request: {request.method} {request.url}")
+
+@app.after_request
+def log_response_info(response):
+    logger.info(f"Response: {response.status}")
+    return response
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logger.error(f"Server error: {e}", exc_info=True)
+    return jsonify({"error": "內部伺服器錯誤", "details": str(e)}), 500
+
+@app.route("/api/health")
+def health_check():
+    return jsonify({"status": "ok", "time": datetime.now().isoformat()})
 
 # 啟動時初始化資料庫
 try:
