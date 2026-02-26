@@ -401,7 +401,10 @@ function parseImportText() {
         if (!line) continue;
         
         // 將千分位逗號移除，避免干擾價格與數量的判斷
-        const cleanLine = line.replace(/,/g, '');
+        let cleanLine = line.replace(/,/g, '');
+        
+        // 移除日期格式 (例如 2026/02/25 或 2026-02-25)，避免年份被誤認為股票代碼
+        cleanLine = cleanLine.replace(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/g, '');
         
         // 抓取第一組像股票代碼的文字（4碼數字開頭，可帶有英文，例如 2330, 0050, 2881A）
         const codeMatch = cleanLine.match(/\b([0-9]{4}[A-Za-z]?)\b/);
@@ -409,30 +412,54 @@ function parseImportText() {
         
         const code = codeMatch[1];
         
-        // 抓取這行所有的數字(包含有小數點的)
-        const numbers = cleanLine.match(/\b\d+(?:\.\d+)?\b/g) || [];
-        const otherNumbers = numbers.filter(n => n !== code);
+        // 只取股票代碼後面的字串來找數字，以免抓到其他的干擾資訊
+        const codeIndex = cleanLine.indexOf(code);
+        const afterCode = cleanLine.substring(codeIndex + code.length);
+        
+        // 抓取後面所有的數字(包含有小數點的)
+        const numbersMatch = afterCode.match(/\b\d+(?:\.\d+)?\b/g) || [];
+        const validNums = numbersMatch.map(Number).filter(n => n > 0);
         
         let price = "";
         let shares = "";
+        let foundPattern = false;
         
-        if (otherNumbers.length > 0) {
-            // 如果只有一個額外數字，就預設給買入價
-            if (otherNumbers.length === 1) {
-                price = otherNumbers[0];
-            } else {
-                // 如果有兩個以上的數字：
-                // 1. 找帶小數點的當作價格
-                const floatNum = otherNumbers.find(n => n.includes('.'));
-                if (floatNum) {
-                    price = floatNum;
-                    shares = otherNumbers.find(n => n !== floatNum && !n.includes('.')) || "";
+        // 嘗試任取相鄰的三個數字，如果 A * B = C (容許微小誤差因為手續費或四捨五入)
+        for (let i = 0; i < validNums.length - 2; i++) {
+            const a = validNums[i];
+            const b = validNums[i+1];
+            const c = validNums[i+2];
+            
+            // 零股交易例如 84股 * 750元 = 63000元，或 690 * 90.1 = 62169
+            if (Math.abs(a * b - c) <= 5) {
+                // 通常有小數點的會是股價
+                if (!Number.isInteger(a) && Number.isInteger(b)) {
+                    price = a; shares = b;
+                } else if (!Number.isInteger(b) && Number.isInteger(a)) {
+                    price = b; shares = a;
                 } else {
-                    // 2. 如果都沒有小數點，預設第一個是價格，第二個是數量（若有例外讓使用者微調）
-                    price = otherNumbers[0];
-                    shares = otherNumbers[1];
+                    // 若都是整數，對帳單通常是：股數在前、價格在後，或價格在前、股數在後
+                    // 根據使用者提供的範例：「股數 價格 預估金額」，例如 84 750 63,000
+                    shares = a; price = b;
                 }
+                foundPattern = true;
+                break;
             }
+        }
+        
+        // 如果找不到 A * B = C 的模式，但有一兩個數字
+        if (!foundPattern && validNums.length >= 2) {
+            const floatNum = validNums.find(n => !Number.isInteger(n));
+            if (floatNum) {
+                price = floatNum;
+                shares = validNums.find(n => n !== floatNum) || "";
+            } else {
+                // 預設第一個為股數，第二個為價格 (與多數對帳單相同)
+                shares = validNums[0];
+                price = validNums[1];
+            }
+        } else if (!foundPattern && validNums.length === 1) {
+            price = validNums[0];
         }
         
         addStockRow(code, "", price, shares, "");
