@@ -54,7 +54,7 @@ SECURITIES_TAX_RATE = 0.003    # 0.3%
 FEE_DISCOUNT = 0.28
 
 
-def calc_fees(buy_price, shares, price_for_sell, fee_discount):
+def calc_fees(buy_price, shares, price_for_sell, fee_discount, is_carry_over_buy=False, is_carry_over_sell=False):
     """
     計算單檔股票的交易成本
     price_for_sell: 已賣出時傳入 sell_price，未賣出傳入 current_price
@@ -62,9 +62,9 @@ def calc_fees(buy_price, shares, price_for_sell, fee_discount):
     buy_amount = buy_price * shares
     sell_amount = (price_for_sell or 0) * shares
 
-    buy_fee = int(buy_amount * STANDARD_FEE_RATE * fee_discount)  # 無條件捨去
-    sell_fee = int(sell_amount * STANDARD_FEE_RATE * fee_discount)
-    sell_tax = int(sell_amount * SECURITIES_TAX_RATE)
+    buy_fee = 0 if is_carry_over_buy else int(buy_amount * STANDARD_FEE_RATE * fee_discount)  # 無條件捨去
+    sell_fee = 0 if is_carry_over_sell else int(sell_amount * STANDARD_FEE_RATE * fee_discount)
+    sell_tax = 0 if is_carry_over_sell else int(sell_amount * SECURITIES_TAX_RATE)
 
     total_cost = buy_amount + buy_fee
     net_value = sell_amount - sell_fee - sell_tax
@@ -131,7 +131,11 @@ def api_get_batches():
         batch_total_fees = 0
         for s in stocks:
             price = get_effective_sell_price(s)
-            fees = calc_fees(s["buy_price"], s["shares"], price, FEE_DISCOUNT)
+            fees = calc_fees(
+                s["buy_price"], s["shares"], price, FEE_DISCOUNT,
+                s.get("is_carry_over_buy", 0) == 1,
+                s.get("is_carry_over_sell", 0) == 1
+            )
             batch_total_cost += fees["total_cost"]
             batch_net_value += fees["net_value"]
             batch_total_fees += fees["total_fees"]
@@ -163,7 +167,11 @@ def api_get_batch(batch_id):
     # 為每檔股票附加費用計算
     for s in stocks:
         price = get_effective_sell_price(s)
-        fees = calc_fees(s["buy_price"], s["shares"], price, FEE_DISCOUNT)
+        fees = calc_fees(
+            s["buy_price"], s["shares"], price, FEE_DISCOUNT,
+            s.get("is_carry_over_buy", 0) == 1,
+            s.get("is_carry_over_sell", 0) == 1
+        )
         s.update(fees)
     batch["stocks"] = stocks
     return jsonify(batch)
@@ -237,13 +245,16 @@ def api_unsell_stock(record_id):
 
 @app.route("/api/stocks/<int:record_id>/move", methods=["POST"])
 def api_move_stock(record_id):
-    """將單一股票紀錄直接展延（搬移）到另一個批次"""
+    """將單一股票紀錄展延結算到另一個批次"""
     data = request.get_json()
     new_batch_id = data.get("new_batch_id")
+    carry_price = float(data.get("carry_price", 0))
+    carry_date = data.get("carry_date", datetime.now().strftime("%Y-%m-%d"))
+
     if not new_batch_id:
         return jsonify({"error": "Missing new_batch_id"}), 400
         
-    move_stock_to_batch(record_id, new_batch_id)
+    move_stock_to_batch(record_id, new_batch_id, carry_price, carry_date)
     return jsonify({"success": True})
 
 
@@ -377,7 +388,11 @@ def api_summary():
 
         for s in stocks:
             price = get_effective_sell_price(s)
-            fees = calc_fees(s["buy_price"], s["shares"], price, FEE_DISCOUNT)
+            fees = calc_fees(
+                s["buy_price"], s["shares"], price, FEE_DISCOUNT,
+                s.get("is_carry_over_buy", 0) == 1,
+                s.get("is_carry_over_sell", 0) == 1
+            )
             batch_cost += fees["total_cost"]
             batch_net += fees["net_value"]
             batch_fees += fees["total_fees"]

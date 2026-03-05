@@ -174,14 +174,22 @@ async function loadBatchDetail(batchId) {
             const pnlPct = s.net_pnl_pct || 0;
             const fees = s.total_fees || 0;
             const isSold = s.is_sold;
+            const isCarryOverSell = s.is_carry_over_sell;
+            const isCarryOverBuy = s.is_carry_over_buy;
             totalCost += cost;
             totalNetValue += netVal;
             totalFees += fees;
 
             const cls = pnlClass(pnl);
-            const soldBadge = isSold
+            let soldBadge = isSold
                 ? `<span style="background:var(--success-bg); color:var(--success); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:600;">已賣出</span>`
                 : `<span style="background:var(--warning-bg); color:var(--warning); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:600;">持有中</span>`;
+            
+            if (isCarryOverSell) {
+                soldBadge = `<span style="background:var(--success-bg); color:var(--success); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:600;">展延結算</span>`;
+            } else if (isCarryOverBuy && !isSold) {
+                soldBadge = `<span style="background:var(--warning-bg); color:var(--warning); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:600;">展延持有</span>`;
+            }
             
             const priceDisplay = isSold
                 ? `$${fmtDecimal(s.sell_price)} <span class="text-muted text-sm">(賣)</span>`
@@ -303,6 +311,8 @@ async function promptMoveStock(recordId, stockCode, stockName, currentBatchId) {
     document.getElementById("moveModalTitle").textContent = `展延 ${stockCode} ${stockName}`;
     document.getElementById("moveRecordId").value = recordId;
     document.getElementById("moveOldBatchId").value = currentBatchId;
+    document.getElementById("moveCarryPrice").value = "";
+    document.getElementById("moveCarryDate").value = new Date().toISOString().split("T")[0];
     
     const selectEl = document.getElementById("moveTargetBatch");
     selectEl.innerHTML = '<option value="">載入中...</option>';
@@ -342,16 +352,27 @@ async function confirmMoveStock() {
     const recordId = document.getElementById("moveRecordId").value;
     const oldBatchId = document.getElementById("moveOldBatchId").value;
     const targetBatchId = document.getElementById("moveTargetBatch").value;
+    const carryPrice = parseFloat(document.getElementById("moveCarryPrice").value);
+    const carryDate = document.getElementById("moveCarryDate").value;
 
     if (!targetBatchId) {
         showToast("請選擇一個目標批次來展延股票！", "error");
+        return;
+    }
+    
+    if (isNaN(carryPrice) || carryPrice <= 0) {
+        showToast("請輸入有效的展延結算價格", "error");
         return;
     }
 
     try {
         await api(`/api/stocks/${recordId}/move`, {
             method: "POST",
-            body: JSON.stringify({ new_batch_id: parseInt(targetBatchId) })
+            body: JSON.stringify({ 
+                new_batch_id: parseInt(targetBatchId),
+                carry_price: carryPrice,
+                carry_date: carryDate
+            })
         });
         
         closeMoveModal();

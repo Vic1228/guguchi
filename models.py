@@ -49,6 +49,9 @@ def init_db():
             shares INTEGER NOT NULL DEFAULT 0,
             current_price REAL DEFAULT 0,
             price_updated_at TEXT,
+            is_carry_over_buy INTEGER NOT NULL DEFAULT 0,
+            is_carry_over_sell INTEGER NOT NULL DEFAULT 0,
+            linked_carry_over_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
             FOREIGN KEY (batch_id) REFERENCES batch(id) ON DELETE CASCADE
         );
@@ -60,6 +63,9 @@ def init_db():
         "ALTER TABLE stock_record ADD COLUMN is_sold INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE stock_record ADD COLUMN sell_price REAL DEFAULT 0",
         "ALTER TABLE stock_record ADD COLUMN sell_date TEXT",
+        "ALTER TABLE stock_record ADD COLUMN is_carry_over_buy INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE stock_record ADD COLUMN is_carry_over_sell INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE stock_record ADD COLUMN linked_carry_over_id INTEGER",
     ]
     for sql in migrations:
         try:
@@ -205,23 +211,55 @@ def sell_stock(record_id, sell_price, sell_date):
 
 
 def unsell_stock(record_id):
-    """取消賣出狀態"""
+    """取消賣出狀態，如果是由展延產生的賣出，則一併將新批次對應的該檔未賣出買入記錄刪除"""
     conn = get_db()
+    
+    # 1. 檢查是否有 linked_carry_over_id
+    row = conn.execute("SELECT linked_carry_over_id FROM stock_record WHERE id = ?", (record_id,)).fetchone()
+    if row and row["linked_carry_over_id"]:
+        linked_id = row["linked_carry_over_id"]
+        # 將對應的新股票記錄也一併刪除
+        conn.execute("DELETE FROM stock_record WHERE id = ?", (linked_id,))
+    
+    # 2. 恢復持有狀態並清空關聯欄位
     conn.execute(
-        "UPDATE stock_record SET is_sold = 0, sell_price = 0, sell_date = NULL WHERE id = ?",
+        "UPDATE stock_record SET is_sold = 0, sell_price = 0, sell_date = NULL, is_carry_over_sell = 0, linked_carry_over_id = NULL WHERE id = ?",
         (record_id,)
     )
     conn.commit()
     conn.close()
 
 
-def move_stock_to_batch(record_id, new_batch_id):
-    """將單一股票紀錄展延（搬移）到另一個批次"""
+def move_stock_to_batch(record_id, new_batch_id, carry_price, carry_date):
+    """將單一股票紀錄展延（搬移）到另一個批次：將當前標記為賣出，並在新批次建立新的一筆"""
     conn = get_db()
+    
+    row = conn.execute("SELECT * FROM stock_record WHERE id = ?", (record_id,)).fetchone()
+    if not row:
+        conn.close()
+        return
+
+    old_stock = dict(row)
+
+    # 1. 將舊紀錄標記為展延賣出 (先把 linked 留空，底下補上)
     conn.execute(
-        "UPDATE stock_record SET batch_id = ? WHERE id = ?",
-        (new_batch_id, record_id)
+        "UPDATE stock_record SET is_sold = 1, sell_price = ?, sell_date = ?, is_carry_over_sell = 1 WHERE id = ?",
+        (carry_price, carry_date, record_id)
     )
+
+    # 2. 在新批次建立展延買入紀錄
+    cursor = conn.execute(
+        "INSERT INTO stock_record (batch_id, stock_code, stock_name, buy_price, shares, is_carry_over_buy) VALUES (?, ?, ?, ?, ?, 1)",
+        (new_batch_id, old_stock["stock_code"], old_stock["stock_name"], carry_price, old_stock["shares"])
+    )
+    new_record_id = cursor.lastrowid
+    
+    # 3. 把新建立的那筆 ID 寫回舊紀錄的 linked_carry_over_id 欄位中
+    conn.execute(
+        "UPDATE stock_record SET linked_carry_over_id = ? WHERE id = ?",
+        (new_record_id, record_id)
+    )
+
     conn.commit()
     conn.close()
 

@@ -175,8 +175,16 @@
             <input type="hidden" id="moveRecordId">
             <input type="hidden" id="moveOldBatchId">
             <p style="margin-bottom: 15px; color: var(--text-muted); font-size: 0.9em;">
-                將未賣出的標的展延（搬移）到另一個運作中的批次繼續追蹤。
+                將未賣出的標的展延（搬移）到另一個運作中的批次繼續追蹤。結算時將不收取此趟賣出與下趟買入之手續費。
             </p>
+            <div class="form-group">
+                <label>展延結算價格</label>
+                <input type="number" id="moveCarryPrice" placeholder="輸入當期結算價" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>展延日期</label>
+                <input type="date" id="moveCarryDate">
+            </div>
             <div class="form-group">
                 <label>選擇目標批次</label>
                 <select id="moveTargetBatch" style="width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 8px; background: var(--bg-secondary); color: var(--text);">
